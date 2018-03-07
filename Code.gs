@@ -56,6 +56,9 @@ function test_Subs_processEvent() {
   var SUBS_EVENT = Subs.SUBS_EVENT
   var SUBS_STATE = Subs.SUBS_STATE
   
+  var TRIAL_FINISHED = true
+  var TRIAL_NOT_FINISHED = false
+  
   try {
 
     // Full Subscription
@@ -74,19 +77,19 @@ function test_Subs_processEvent() {
 
     event.event = SUBS_EVENT.START
     sub.processEvent(event)
-    checkState('FULL - NOSUB (START) => STARTED', TRIAL_FALSE, SUBS_STATE.STARTED, TIME_SET)
+    checkState('FULL - NOSUB (START) => STARTED', TRIAL_FALSE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED)
    
     event.event = SUBS_EVENT.CANCEL
     sub.processEvent(event)
-    checkState('FULL - STARTED (CANCEL) => CANCELLED', TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET)
+    checkState('FULL - STARTED (CANCEL) => CANCELLED', TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET, TRIAL_NOT_FINISHED)
 
     event.event = SUBS_EVENT.START
     sub.processEvent(event)
-    checkState('FULL - CANCELLED (START) => STARTED', TRIAL_FALSE, SUBS_STATE.STARTED, TIME_SET)
+    checkState('FULL - CANCELLED (START) => STARTED', TRIAL_FALSE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED)
 
     event.event = SUBS_EVENT.EXPIRE
     sub.processEvent(event)
-    checkState('FULL - STARTED (EXPIRE) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR)
+    checkState('FULL - STARTED (EXPIRE) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED)
     
     event.event = SUBS_EVENT.START
     sub.processEvent(event)
@@ -157,16 +160,14 @@ function test_Subs_processEvent() {
     
     sub.processEvent({event:SUBS_EVENT.START, trial: TRIAL_TRUE})
     sub.checkIfExpired() // Not expired yet as before default
-    checkState('TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET)
-    checkTrialFinished(false)
+    checkState('TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED)
     
     // 0 sub trial length, trial started
     
     config.trialLength = 0
     var sub = Subs.get(config)
     sub.checkIfExpired()    
-    checkState('TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR)
-    checkTrialFinished(true)
+    checkState('TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_FINISHED)
 
     // default full sub length (0 trial length), full sub started
 
@@ -175,8 +176,7 @@ function test_Subs_processEvent() {
     var sub = Subs.get(config)
     sub.processEvent({event:SUBS_EVENT.START, trial: TRIAL_FALSE})
     sub.checkIfExpired() // Not expired yet as before default full trial length
-    checkState('FULL - NOSUB (START) => STARTED', TRIAL_FALSE, SUBS_STATE.STARTED, TIME_SET)
-    checkTrialFinished(false)
+    checkState('FULL - NOSUB (START) => STARTED', TRIAL_FALSE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED)
         
     // 0 full sub trial length, trial started
 
@@ -186,8 +186,7 @@ function test_Subs_processEvent() {
     var sub = Subs.get(config)
     sub.processEvent({event:SUBS_EVENT.START, trial: TRIAL_FALSE})    
     sub.checkIfExpired()    
-    checkState('FULL - STARTED (EXPIRE) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR)
-    checkTrialFinished(false)
+    checkState('FULL - STARTED (EXPIRE) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED)
 */    
     // Switch from trial to full sub
     
@@ -197,15 +196,14 @@ function test_Subs_processEvent() {
     var sub = Subs.get(config)
     
     sub.processEvent({event:SUBS_EVENT.START, trial: TRIAL_TRUE})
-    sub.checkIfExpired() // Expired as trial length 0 days
-    checkState('TRIAL - STARTED (EXPIRED) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR)
+    sub.checkIfExpired() // Generate Expire event eas trial length 0 days
+    checkState('TRIAL - STARTED (EXPIRED) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_FINISHED)
     
     sub.processEvent({event:SUBS_EVENT.START, trial: TRIAL_TRUE}) // Try for another trial and fail
-    checkState('TRIAL - EXPIRED (START) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR)
+    checkState('TRIAL - EXPIRED (START) => EXPIRED', TRIAL_NULL, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_FINISHED)
     
     sub.processEvent({event:SUBS_EVENT.START, trial: TRIAL_FALSE}) // Full sub
-    checkState('FULL - EXPIRED (START) => STARTED', TRIAL_FALSE, SUBS_STATE.STARTED, TIME_SET) 
-    checkTrialFinished(false)
+    checkState('FULL - EXPIRED (START) => STARTED', TRIAL_FALSE, SUBS_STATE.STARTED, TIME_SET, TRIAL_FINISHED) 
     
     config.log.info('!!!! ALL TESTS OK !!!!')
 
@@ -219,7 +217,7 @@ function test_Subs_processEvent() {
   // Private Functions
   // -----------------
   
-  function checkState(message, newTrial, newState, newTimeStartedSet) {
+  function checkState(message, newTrial, newState, newTimeStartedSet, trialFinished) {
 
     var oldTrial       = sub.isTrial()       
     var oldState       = sub.getState()
@@ -241,22 +239,29 @@ function test_Subs_processEvent() {
       throw new Error(message + ' - Bad time, was ' + oldTimeStarted + ', should be clear (null)')
     }
     
-    config.log.info('TEST OK: "' + message + '", ' + newTrial + ', ' + newState + ', ' + newTimeStartedSet)
+    checkTrialFinished(trialFinished)
     
+    config.log.info('TEST OK: "' + message + '", ' + newTrial + ', ' + newState + ', ' + newTimeStartedSet)
+
+    // Private Functions
+    // -----------------
+    
+    function checkTrialFinished(checkFinished) {
+    
+      if (checkFinished) {
+        if (!sub.isTrialFinished()) {
+          throw new Error('Trial not finished')
+        }
+      } else {
+        if (sub.isTrialFinished()) {
+          throw new Error('Trial finished')
+        }    
+      }
+      
+    } // test_Subs_processEvent.checkState.checkTrialFinished()
+  
   } // test_Subs_processEvent.checkState()
 
-  function checkTrialFinished(checkFinished) {
-  
-    if (checkFinished) {
-      if (!sub.isTrialFinished()) {
-        throw new Error('Trial not finished')
-      }
-    } else {
-      if (sub.isTrialFinished()) {
-        throw new Error('Trial finished')
-      }    
-    }
-  }
 
 } // test_Subs_processEvent()
 
