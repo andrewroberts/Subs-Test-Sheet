@@ -1,10 +1,18 @@
+// TODO
+// ----
+
+// Test triggers made and deleted
+// What state to leave in after error
+// Test concurrent operation
+
 // Config
 // ------
 
-var SCRIPT_NAME = 'Subs Test Sheet'
+var SCRIPT_NAME    = 'Subs Test Sheet'
 var SCRIPT_VERSION = 'v1.0.dev'
 
-var DISPLAY_FUNCTION_NAMES = false // Debugger won't work if truw
+var TEST_DISPLAY_FUNCTION_NAMES = true // Debugger won't work if truw
+var TEST_DEBUG_LEVEL            = BBLog.Level.ALL
 
 var TRIAL_TRUE  = true
 var TRIAL_FALSE = false
@@ -24,18 +32,189 @@ var TRIAL_NOT_FINISHED = false
 function onOpen() {
   SpreadsheetApp
     .getUi()
-    .createMenu('[ Subs Tests ]')
-    .addItem('Run all tests', 'test_Subs_processEvent')
+    .createMenu('[ Subs ]')
+    .addItem('Run all tests', 'test_Subs_all')
     .addItem('Dump config',   'test_Subs_dumpState')
     .addItem('Clear config',  'test_Subs_clearState')
     .addToUi()
 }
 
+// Tests
+
+function test_Subs_all() {
+
+  var config = test_init()
+  test_Subs_lock()
+//  test_Subs_processEvent()
+//  test_checkIfExpired()
+  config.log.info('!!!! ALL TESTS OK !!!!')  
+}
+
+function test_Subs_lock() {
+
+  // A small one to run with debug on
+  var config = test_init()
+  test_Subs_clearState()    
+  
+  var sub = Subs.get(config)
+  var sub1 = Subs.get(config)
+  
+  var response = sub.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_TRUE})
+  checkState_(sub, config, '0.1a. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
+
+  var response = sub1.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_TRUE})
+  checkState_(sub1, config, '0.1a. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
+
+  var response = sub.processEvent({event:SUBS_EVENT.EXPIRE})
+  checkState_(sub, config, '0.1b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+
+  var response = sub1.processEvent({event:SUBS_EVENT.EXPIRE})
+  checkState_(sub1, config, '0.1b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+
+  var response = sub.processEvent({event:SUBS_EVENT.ACKNOWLEDGE})
+  checkState_(sub, config, '0.1c. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+
+  var response = sub1.processEvent({event:SUBS_EVENT.ACKNOWLEDGE})
+  checkState_(sub1, config, '0.1c. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+
+  return
+}
+
+function test_Subs_processEvent() {
+
+  var config = test_init()
+  
+  try {
+
+    test_Subs_clearState()    
+    var sub = Subs.get(config)
+    
+    var TESTS = [
+    
+      // INPUTS                             OUTPUTS
+      // ======                             =======
+
+      // Event                 Trial        Text (1st state (event) => 2nd state)     ExpTrial     ExpState              Exp         ExpTrialFin         ExpResp
+      // -----                 -----        ----                                      --------     --------              ---         -----------         -------
+
+      // 1. Full loop with expire
+
+      [SUBS_EVENT.START,       TRIAL_FALSE, '1.1a. FULL - NOSUB (START) => STARTED',        TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '1.1b. FULL - STARTED (EXPIRE) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '1.1c. FULL - EXPIRED (ACK) => NOSUB',          TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
+
+      // 2. Full loop with cancel, then expire
+      
+      [SUBS_EVENT.START,       TRIAL_FALSE, '1.2a. FULL - NOSUB (START) => STARTED',        TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '1.2b. FULL - STARTED (CANCEL) => CANCELLED',   TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '1.2c. FULL - CANCELLED (EXPIRE) => EXPIRED',   TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '1.2d. FULL - EXPIRED (ACK) => NOSUB',          TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
+      
+      // 3. Full loop with "no action" on all states
+      
+      [SUBS_EVENT.START,       TRIAL_FALSE, '1.3a. FULL - NOSUB (START) => STARTED',        TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.START,       TRIAL_FALSE, '1.3b. FULL - START (START) => STARTED',        TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '1.3c. FULL - START (ACK) => STARTER',          TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '1.3d. FULL - STARTED (CANCEL) => CANCELLED',   TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '1.3e. FULL - CANCELLED (CANCEL) => CANCELLED', TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '1.3f. FULL - CANCELLED (ACK) => CANCELLED',    TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '1.3g. FULL - CANCELLED (EXPIRE) => EXPIRED',   TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '1.3h. FULL - EXPIRED (CANCEL) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '1.3i. FULL - EXPIRED (EXPIRE) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.START,       TRIAL_FALSE, '1.3j. FULL - EXPIRED (START) => STARTED',      TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '1.3k. FULL - STARTED (EXPIRE) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '1.3l. FULL - EXPIRED (ACK) => NOSUB',          TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
+
+      // 4. Trial, to full after attempt at second trial
+
+      [SUBS_EVENT.START,       TRIAL_TRUE,  '1.4a. TRIAL - NOSUB (START) => STARTED',       TRIAL_TRUE,  SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
+      [SUBS_EVENT.EXPIRE,      TRIAL_TRUE,  '1.4b. TRIAL - STARTED (EXPIRE) => EXPIRED',    TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_FINISHED,     ''],
+      [SUBS_EVENT.START,       TRIAL_TRUE,  '1.4c. TRIAL - EXPIRED (START) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_FINISHED,     'The user has already had one trial'],
+      [SUBS_EVENT.START,       TRIAL_FALSE, '1.4d. FULL  - EXPIRED (START) => STARTED',     TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_FINISHED,     ''],
+      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '1.4e. FULL  - STARTED (CANCEL) => CANCELLED',  TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_FINISHED,     ''],
+      [SUBS_EVENT.START,       TRIAL_TRUE,  '1.4f. TRIAL - CANCELLED (START) => CANCELLED', TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_FINISHED,     'The user has already had one trial'],      
+      [SUBS_EVENT.START,       TRIAL_FALSE, '1.4g. FULL  - CANCELLED (START) => STARTED',   TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_FINISHED,     ''],      
+      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '1.4h. FULL  - STARTED (CANCEL) => CANCELLED',  TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_FINISHED,     ''],
+      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '1.4i. FULL  - CANCELLED (EXPIRE) => EXPIRED',  TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_FINISHED,     ''],
+      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '1.4j. TRIAL - EXPIRED (ACK) => NOSUB',         TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_FINISHED,     ''],
+      [SUBS_EVENT.START,       TRIAL_TRUE,  '1.4k. TRIAL - NOSUB (START) => NOSUB',         TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_FINISHED,     'The user has already had one trial'],
+    ]
+
+    TESTS.forEach(function(test) {
+      var response = sub.processEvent({event:test[0], isTrial: test[1]})
+      checkState_(sub, config, test[2], test[3], test[4], test[5], test[6], test[7], response)
+    })
+  
+  } catch (error) {
+  
+    Assert.handleError(error, 'Test failed', config.log)
+  }
+  
+} // test_Subs_processEvent()
+
+function test_checkIfExpired() {
+    
+  try {
+
+    var config = test_init()
+
+    test_Subs_clearState()
+    var sub = Subs.get(config)
+    
+    // Default sub lengths, no sub
+    
+    sub.checkIfExpired()
+    checkState_(sub, config, '2.1a. TRIAL - NOSUB () => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', '')    
+    
+    // Default trial length, trial started 
+    
+    var response = sub.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_TRUE})
+    checkState_(sub, config, '2.2a. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)        
+    sub.checkIfExpired()    
+    checkState_(sub, config, '2.2b. TRIAL - STARTED () => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', '')    
+
+    // 0 trial length
+    
+    test_Subs_clearState()
+    
+    config.trialLength = 0 // Expire immediately    
+
+    var sub = Subs.get(config)
+    
+    var response = sub.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_TRUE})
+    checkState_(sub, config, '2.3a. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
+    
+    sub.checkIfExpired()    
+    checkState_(sub, config, '2.3b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_FINISHED, '', '')    
+
+    // 0 full sub length
+    
+    test_Subs_clearState()
+    
+    config.fullLength = 0 // Expire immediately    
+
+    var sub = Subs.get(config)
+    
+    var response = sub.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_FALSE})
+    checkState_(sub, config, '2.4a. FULL - NOSUB (START) => STARTED', TRIAL_FALSE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
+    
+    sub.checkIfExpired()    
+    checkState_(sub, config, '2,4b. FULL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', '')    
+
+  } catch (error) {
+  
+    Assert.handleError(error, 'Test failed', config.log)
+  }
+
+} // test_checkIfExpired()
+
+// Helpers
+
 function test_init() {
 
   var log = BBLog.getLog({
-    level                : BBLog.Level.INFO, 
-    displayFunctionNames : BBLog.DisplayFunctionNames[DISPLAY_FUNCTION_NAMES ? 'YES' : 'NO'],
+    level                : TEST_DEBUG_LEVEL, 
+    displayFunctionNames : BBLog.DisplayFunctionNames[TEST_DISPLAY_FUNCTION_NAMES ? 'YES' : 'NO'],
     lock                 : LockService.getScriptLock(),
   })
     
@@ -50,129 +229,18 @@ function test_init() {
   return {
     properties         : PropertiesService.getScriptProperties(),
     log                : log,
-    fullLength         : 0, // Expire immediately
-    trialLength        : 0, // Expire immediately    
   }
     
 } // test_init()
 
-// function onGetSubsState_()             {return Subs.getState()}
-// function onProcessSubsEvent_(event)    {return sub.processEvent(event)}
-
 function test_Subs_dumpState() {
   var config = test_init()
-  config.log.fine('Properties: ' + JSON.stringify(config.properties.getProperties()))
+  config.log.info('Properties: ' + JSON.stringify(config.properties.getProperties()))
 }
 
 function test_Subs_clearState() {
   test_init().properties.deleteAllProperties()
 }
-
-function test_Subs_processEvent() {
-
-  var config = test_init()
-    
-  try {
-
-    test_Subs_clearState()    
-    var sub = Subs.get(config)
-    
-    var TESTS = [
-    
-      // INPUTS                             OUTPUTS
-      // ======                             =======
-
-      // Event                 Trial        Text                                      ExpTrial     ExpState              Exp         ExpTrialFin         ExpResp
-      // -----                 -----        ----                                      --------     --------              ---         -----------         -------
-
-// Check helper functions first
-// sub.checkIfExpired() 
-// Test triggers made and deleted
-// What state to leave in after error
-
-      // 1. Full loop with expire
-
-      [SUBS_EVENT.START,       TRIAL_FALSE, '1a. FULL - NOSUB (START) => STARTED',        TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '1b. FULL - STARTED (EXPIRE) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '1c. FULL - EXPIRED (ACK) => NOSUB',          TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
-
-      // 2. Full loop with cancel, then expire
-      
-      [SUBS_EVENT.START,       TRIAL_FALSE, '2a. FULL - NOSUB (START) => STARTED',        TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '2b. FULL - STARTED (CANCEL) => CANCELLED',   TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '2c. FULL - CANCELLED (EXPIRE) => EXPIRED',   TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '2d. FULL - EXPIRED (ACK) => NOSUB',          TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
-      
-      // 3. Full loop with "no action" on all states
-      
-      [SUBS_EVENT.START,       TRIAL_FALSE, '3a FULL - NOSUB (START) => STARTED',         TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.START,       TRIAL_FALSE, '3b. FULL - START (START) => STARTED',        TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '3c. FULL - START (ACK) => STARTER',          TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '3d. FULL - STARTED (CANCEL) => CANCELLED',   TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '3e. FULL - CANCELLED (CANCEL) => CANCELLED', TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '3f. FULL - CANCELLED (ACK) => CANCELLED',    TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '3g. FULL - CANCELLED (EXPIRE) => EXPIRED',   TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '3h. FULL - EXPIRED (CANCEL) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '3i. FULL - EXPIRED (EXPIRE) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.START,       TRIAL_FALSE, '3j. FULL - EXPIRED (START) => STARTED',      TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '3k. FULL - STARTED (EXPIRE) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '3l. FULL - EXPIRED (ACK) => NOSUB',          TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_NOT_FINISHED, ''],
-
-      // 4. Trial, to full after attempt at second trial
-
-      [SUBS_EVENT.START,       TRIAL_TRUE,  '4a. TRIAL - NOSUB (START) => STARTED',       TRIAL_TRUE,  SUBS_STATE.STARTED,   TIME_SET,   TRIAL_NOT_FINISHED, ''],
-      [SUBS_EVENT.EXPIRE,      TRIAL_TRUE,  '4b. TRIAL - STARTED (EXPIRE) => EXPIRED',    TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_FINISHED,     ''],
-      [SUBS_EVENT.START,       TRIAL_TRUE,  '4c. TRIAL - EXPIRED (START) => EXPIRED',     TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_FINISHED,     'The user has already had one trial'],
-      [SUBS_EVENT.START,       TRIAL_FALSE, '4d. FULL  - EXPIRED (START) => STARTED',     TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_FINISHED,     ''],
-      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '4e. FULL  - STARTED (CANCEL) => CANCELLED',  TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_FINISHED,     ''],
-      [SUBS_EVENT.START,       TRIAL_TRUE,  '4f. TRIAL - CANCELLED (START) => CANCELLED', TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_FINISHED,     'The user has already had one trial'],      
-      [SUBS_EVENT.START,       TRIAL_FALSE, '4g. FULL  - CANCELLED (START) => STARTED',   TRIAL_FALSE, SUBS_STATE.STARTED,   TIME_SET,   TRIAL_FINISHED,     ''],      
-      [SUBS_EVENT.CANCEL,      TRIAL_FALSE, '4h. FULL  - STARTED (CANCEL) => CANCELLED',  TRIAL_FALSE, SUBS_STATE.CANCELLED, TIME_SET,   TRIAL_FINISHED,     ''],
-      [SUBS_EVENT.EXPIRE,      TRIAL_FALSE, '4i. FULL  - CANCELLED (EXPIRE) => EXPIRED',  TRIAL_FALSE, SUBS_STATE.EXPIRED,   TIME_CLEAR, TRIAL_FINISHED,     ''],
-      [SUBS_EVENT.ACKNOWLEDGE, TRIAL_FALSE, '4j. TRIAL - EXPIRED (ACK) => NOSUB',         TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_FINISHED,     ''],
-      [SUBS_EVENT.START,       TRIAL_TRUE,  '4k. TRIAL - NOSUB (START) => NOSUB',         TRIAL_FALSE, SUBS_STATE.NOSUB,     TIME_CLEAR, TRIAL_FINISHED,     'The user has already had one trial'],
-    ]
-
-    TESTS.forEach(function(test) {
-      var response = sub.processEvent({event:test[0], isTrial: test[1]})
-      checkState_(sub, config, test[2], test[3], test[4], test[5], test[6], test[7], response)
-    })
-  
-    config.log.info('!!!! ALL TESTS OK !!!!')
-
-  } catch (error) {
-  
-    Assert.handleError(error, 'Test failed', config.log)
-  }
-  
-} // test_Subs_processEvent()
-
-function test_checkIfExpired() {
-
-  var config = test_init()
-    
-  try {
-
-    test_Subs_clearState()
-    var sub = Subs.get(config)
-    
-    // Default sub lengths, no sub
-    
-    sub.checkIfExpired()
-    checkState_(sub, '5a. TRIAL - EXPIRED (NOSUB) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', '')    
-    
-    // Default sub trial length, trial started 
-    
-    var response = sub.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_TRUE})
-    sub.checkIfExpired() // Not expired yet as before default
-    checkState_(sub, config, '5b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_FINISHED, '', response)    
-        
-  } catch (error) {
-  
-    Assert.handleError(error, 'Test failed', config.log)
-  }
-
-} // test_checkIfExpired()
 
 function checkState_(sub, config, testMessage, newTrial, newState, newTimeStarted, trialFinished, expectedMessage, actualMessage) {
   
@@ -222,11 +290,17 @@ function checkState_(sub, config, testMessage, newTrial, newState, newTimeStarte
   
 } // checkState_()
 
+var Properties_ = (function(ns) {
+
+  
+
+  return ns
+
+})({})
+
 // Misc
 // ----
 
 function test_misc() {
-  var a = -1
-  var b = a.toString()
-  return
+
 }
