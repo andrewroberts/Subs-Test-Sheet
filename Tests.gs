@@ -1,10 +1,3 @@
-// TODO
-// ----
-
-// Test triggers made and deleted
-// What state to leave in after error
-// Test concurrent operation
-
 // Config
 // ------
 
@@ -44,7 +37,7 @@ function onOpen() {
 function test_Subs_all() {
 
   var config = test_init()
-  test_Subs_lock()
+//  test_Subs_lock()
 //  test_Subs_processEvent()
 //  test_checkIfExpired()
   config.log.info('!!!! ALL TESTS OK !!!!')  
@@ -53,29 +46,33 @@ function test_Subs_all() {
 function test_Subs_lock() {
 
   // A small one to run with debug on
+  
+  // test_init() returns the script properties by default
   var config = test_init()
   test_Subs_clearState()    
   
   var sub = Subs.get(config)
+  
+  config.properties = PropertiesService.getUserProperties()
   var sub1 = Subs.get(config)
   
   var response = sub.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_TRUE})
   checkState_(sub, config, '0.1a. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub1.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_TRUE})
-  checkState_(sub1, config, '0.1a. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub1, config, '0.1b. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub.processEvent({event:SUBS_EVENT.EXPIRE})
-  checkState_(sub, config, '0.1b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub, config, '0.2a. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub1.processEvent({event:SUBS_EVENT.EXPIRE})
-  checkState_(sub1, config, '0.1b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub1, config, '0.2b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub.processEvent({event:SUBS_EVENT.ACKNOWLEDGE})
-  checkState_(sub, config, '0.1c. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub, config, '0.3a. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub1.processEvent({event:SUBS_EVENT.ACKNOWLEDGE})
-  checkState_(sub1, config, '0.1c. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub1, config, '0.3b. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
 
   return
 }
@@ -290,17 +287,13 @@ function checkState_(sub, config, testMessage, newTrial, newState, newTimeStarte
   
 } // checkState_()
 
-var Properties_ = (function(ns) {
-
-  
-
-  return ns
-
-})({})
-
 // Misc
 // ----
 
 function test_misc() {
-
+  try {
+    throw "Error1"
+  } finally {  
+    Logger.log('Error1')
+  }
 }
