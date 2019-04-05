@@ -1,18 +1,11 @@
-// TODO
-// ----
-
-// Test triggers made and deleted
-// What state to leave in after error
-// Test concurrent operation
-
 // Config
 // ------
 
 var SCRIPT_NAME    = 'Subs Test Sheet'
-var SCRIPT_VERSION = 'v1.0.dev'
+var SCRIPT_VERSION = 'v1.1'
 
-var TEST_DISPLAY_FUNCTION_NAMES = true // Debugger won't work if truw
-var TEST_DEBUG_LEVEL            = BBLog.Level.ALL
+var TEST_DISPLAY_FUNCTION_NAMES = false // Debugger won't work if true
+var TEST_DEBUG_LEVEL            = BBLog.Level.INFO
 
 var TRIAL_TRUE  = true
 var TRIAL_FALSE = false
@@ -25,6 +18,8 @@ var SUBS_STATE = Subs.SUBS_STATE
 
 var TRIAL_FINISHED = true
 var TRIAL_NOT_FINISHED = false
+
+var ERROR_HANDLE = Assert.HandleError.THROW
 
 // Code
 // ----
@@ -45,37 +40,41 @@ function test_Subs_all() {
 
   var config = test_init()
   test_Subs_lock()
-//  test_Subs_processEvent()
-//  test_checkIfExpired()
+  test_Subs_processEvent()
+  test_checkIfExpired()
   config.log.info('!!!! ALL TESTS OK !!!!')  
 }
 
 function test_Subs_lock() {
 
   // A small one to run with debug on
+  
+  // test_init() returns the script properties by default
   var config = test_init()
   test_Subs_clearState()    
   
   var sub = Subs.get(config)
+  
+  config.properties = PropertiesService.getUserProperties()
   var sub1 = Subs.get(config)
   
   var response = sub.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_TRUE})
   checkState_(sub, config, '0.1a. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub1.processEvent({event:SUBS_EVENT.START, isTrial: TRIAL_TRUE})
-  checkState_(sub1, config, '0.1a. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub1, config, '0.1b. TRIAL - NOSUB (START) => STARTED', TRIAL_TRUE, SUBS_STATE.STARTED, TIME_SET, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub.processEvent({event:SUBS_EVENT.EXPIRE})
-  checkState_(sub, config, '0.1b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub, config, '0.2a. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub1.processEvent({event:SUBS_EVENT.EXPIRE})
-  checkState_(sub1, config, '0.1b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub1, config, '0.2b. TRIAL - STARTED (EXPIRE) => EXPIRED', TRIAL_FALSE, SUBS_STATE.EXPIRED, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub.processEvent({event:SUBS_EVENT.ACKNOWLEDGE})
-  checkState_(sub, config, '0.1c. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub, config, '0.3a. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
 
   var response = sub1.processEvent({event:SUBS_EVENT.ACKNOWLEDGE})
-  checkState_(sub1, config, '0.1c. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
+  checkState_(sub1, config, '0.3b. TRIAL - EXPIRED (ACKNOWLEDGE) => NOSUB', TRIAL_FALSE, SUBS_STATE.NOSUB, TIME_CLEAR, TRIAL_NOT_FINISHED, '', response)
 
   return
 }
@@ -147,7 +146,18 @@ function test_Subs_processEvent() {
   
   } catch (error) {
   
-    Assert.handleError(error, 'Test failed', config.log)
+    var assertConfig = {
+      error:          error,
+      userMessage:    'Test failed',
+      log:            config.log,
+      handleError:    ERROR_HANDLE, 
+      sendErrorEmail: SEND_ERROR_EMAIL, 
+      emailAddress:   ADMIN_EMAIL_ADDRESS,
+      scriptName:     SCRIPT_NAME,
+      scriptVersion:  SCRIPT_VERSION, 
+    }
+
+    Assert.handleError(assertConfig) 
   }
   
 } // test_Subs_processEvent()
@@ -203,7 +213,18 @@ function test_checkIfExpired() {
 
   } catch (error) {
   
-    Assert.handleError(error, 'Test failed', config.log)
+    var assertConfig = {
+      error:          error,
+      userMessage:    'Test failed',
+      log:            config.log,
+      handleError:    ERROR_HANDLE, 
+      sendErrorEmail: SEND_ERROR_EMAIL, 
+      emailAddress:   ADMIN_EMAIL_ADDRESS,
+      scriptName:     SCRIPT_NAME,
+      scriptVersion:  SCRIPT_VERSION, 
+    }
+
+    Assert.handleError(assertConfig) 
   }
 
 } // test_checkIfExpired()
@@ -216,14 +237,6 @@ function test_init() {
     level                : TEST_DEBUG_LEVEL, 
     displayFunctionNames : BBLog.DisplayFunctionNames[TEST_DISPLAY_FUNCTION_NAMES ? 'YES' : 'NO'],
     lock                 : LockService.getScriptLock(),
-  })
-    
-  Assert.init({
-    handleError    : Assert.HandleError.THROW, 
-    sendErrorEmail : false, 
-    emailAddress   : '',
-    scriptName     : SCRIPT_NAME,
-    scriptVersion  : SCRIPT_VERSION, 
   })
     
   return {
@@ -290,17 +303,14 @@ function checkState_(sub, config, testMessage, newTrial, newState, newTimeStarte
   
 } // checkState_()
 
-var Properties_ = (function(ns) {
-
-  
-
-  return ns
-
-})({})
-
 // Misc
 // ----
 
 function test_misc() {
-
+  var config = test_init()
+  test_Subs_clearState()    
+  var sub = Subs.get(config)
+  var response = sub.processEvent({event: SUBS_EVENT.START})
+  Logger.log(response)
+  return
 }
